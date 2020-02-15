@@ -1,0 +1,1 @@
+import numpy as np#%%@np.vectorizedef swt(sigma_a, sigma_m):    if (sigma_m<=0):        sigma_ar = sigma_a    else:        sigma_ar = np.sqrt(sigma_a*(sigma_a+sigma_m))    return sigma_ar
