@@ -6,9 +6,140 @@ import custom_functions.custom_functions as cf
 
 class UnsteadyBem(object):
     '''
+    In this code, the Unsteady Blade Element Momentum is yet another object.
+    The choice of separating the wind turbine and the BEM model was made in
+    order to maintain in the wind turbine wt object only the attributes that
+    inherently characterise it like the blade radius, pitch angle, etc.
+    
+    i_t : time iteration counter
+    i_b : blade number counter
+    i_z : blde section counter
+    i_d : direction {0: x, 1: y, 2: z}
+    i_df : degree of freedom
+    
+    Attributes
+    ----------
+    
+    t_vec : numpy.ndarray[:], dtype=float
+            [s] simulation time array
+    l : numpy.ndarray[:, :, :], dtype=float
+        [N/m] blade section airfoil lift per meter
+        indices: [i_t, i_b, i_z]
+    d : numpy.ndarray[:, :, :], dtype=float
+        [N/m] blade section airfoil drag per meter
+        indices: [i_t, i_b, i_z]
+    phi : numpy.ndarray[:, :, :], dtype=float
+          [rad] blade section inflow angle
+          indices: [i_t, i_b, i_z]
+    alpha : numpy.ndarray[:, :, :], dtype=float
+            [rad] blade section angle of attack
+            indices: [i_t, i_b, i_z]
+    px : numpy.ndarray[:, :, :], dtype=float
+         [N/m] blade section aerodynamic force per meter in x direction (in the
+         blade root reference frame)
+         indices: [i_t, i_b, i_z]
+    px : numpy.ndarray[:, :, :], dtype=float
+         [N/m] blade section aerodynamic force per meter in y direction (in the
+         blade root reference frame)
+         indices: [i_t, i_b, i_z]
+    f_aero : numpy.ndarray[:, :, :, :], dtype=float
+             [N/m] blade section aerodynamic forces per meter (in the blade 
+             root reference frame)
+             indices: [i_t, i_b, i_z, i_d]
+    f_gravity : numpy.ndarray[:, :, :, :], dtype=float
+                [N/m] blade section gravity forces per meter (in the blade root
+                reference frame).
+                indices: [i_t, i_b, i_z, i_d]
+    f_inertia : numpy.ndarray[:, :, :, :], dtype=float
+                [N/m] blade section inertia forces per meter (in the blade root
+                reference frame)
+                indices: [i_t, i_b, i_z, i_d]
+    r_0 : numpy.ndarray[:, :, :, :], dtype=float
+          [m] blade section position in inertial reference frame
+          indices: [i_t, i_b, i_z, i_d]
+    r_b4 : numpy.ndarray[:, :, :, :], dtype=float
+           [m] blade section position in the moving blade root reference frame
+           indices: [i_t, i_b, i_z, i_d]
+    v_4 : numpy.ndarray[:, :, :, :], dtype=float
+          [m/s] blade section absolute velocity in the moving blade root
+          reference frame
+          indices: [i_t, i_b, i_z, i_d]
+    w : numpy.ndarray[:, :, :, :], dtype=float
+        [m/s] iduced velocity in the rotor shaft reference of frame
+        indices: [i_t, i_b, i_z, i_d]
+    w_0 : numpy.ndarray[:, :, :, :], dtype=float
+          [m/s] iduced velocity before the skew angle correction
+          indices: [i_t, i_b, i_z, i_d]
+    w_qs : numpy.ndarray[:, :, :, :], dtype=float
+           [m/s] quasi-static iduced velocity
+           indices: [i_t, i_b, i_z, i_d]
+    w_int : numpy.ndarray[:, :, :, :], dtype=float
+            [m/s] intermediate value of the iduced velocity method
+            indices: [i_t, i_b, i_z, i_d]
+    a : numpy.ndarray[:, :, :], dtype=float
+        [-] axial induction factor
+        indices: [i_t, i_b, i_z]
+    chi : numpy.ndarray[:], dtype=float
+          [rad] skew angle
+          indices : [i_t]
+    YT_cf : numpy.ndarray[:, :], dtype=float
+            [-] skew angle correction factor
+    u_prime_3 : numpy.ndarray[:, :, :, :], dtype=float
+                [m/s] (u + f_g n(n⋅w)), described in the shaft reference frame
+                indices: [i_t, i_b, i_z, i_d]
+    u_prime_2 : numpy.ndarray[:, :, :, :], dtype=float
+                [m/s] (u + f_g n(n⋅w)), described in the nacelle reference
+                frame and without the wind turbulent fluctuations components
+                indices: [i_t, i_b, i_z, i_d]    
+    fs : numpy.ndarray[:, :, :], dtype=float
+         Stig Øye dynamic stall model degree of attached flow
+    theta : numpy.ndarray[:], dtype=float
+            [rad] shaft azimuth angle as a funtion of time
+    Omega : numpy.ndarray[:], dtype=float
+            [rad/s] shaft angular speed as a function of time
+    Power_rot : numpy.ndarray[:], dtype=float
+                [W] aerodynamic power as a function of time
+    M_aero : numpy.ndarray[:, :, :], dtype=float
+             [N*m] aerodynamic moment of blade i_b on the rotor
+             indices: [i_t, i_b, i_d]
+    M_gravity : numpy.ndarray[:, :, :], dtype=float
+                [N*m] moment of blade i_b on the rotor due to the gravity forces
+                indices: [i_t, i_b, i_d]
+    M_inertia : numpy.ndarray[:, :, :], dtype=float
+                [N*m] moment of blade i_b on the rotor due to the inertia forces
+                indices: [i_t, i_b, i_d]
+    M_blade : numpy.ndarray[:, :, :], dtype=float
+              [N*m] M_blade = M_aero + M_gravity + M_inertia
+              indices: [i_t, i_b, i_d]
+    M_rot : numpy.ndarray[:, :, :], dtype=float
+            [N*m] M_rot = M_blade[:, 0, :] + M_blade[:, 1, :] + M_blade[:, 2, :] 
+            indices: [i_t, i_b, i_d]
+    A_01 : numpy.ndarray[:, :, :, :], dtype=float
+           transformation tensor from reference frame 0 to reference frame 1
+           indices: [i_t, i_b, i_d, i_d]
+    A_23 : numpy.ndarray[:, :, :, :], dtype=float
+           transformation tensor from reference frame 2 to reference frame 3
+           indices: [i_t, i_b, i_d, i_d]
+    q : numpy.ndarray[:, :], dtype=float
+        generalised degrees of freedom
+        indices: [i_t, i_df]
+    q_dot : numpy.ndarray[:, :], dtype=float
+            generalised degrees of freedom first derivative on time
+    q_ddot : numpy.ndarray[:, :], dtype=float
+             generalised degrees of freedom second derivative on time
     '''
     
     def __init__(self, wt, t_vec):
+        '''
+        This method allocates memory for the object attributes and initialises
+        theta and Omega.
+
+        Parameters
+        ----------
+        wt : WindTurbine object
+        t_vec : numpy.ndarray[:], dtype=float
+                simulation time array
+        '''
         
         self.t_vec = t_vec
         
@@ -63,8 +194,6 @@ class UnsteadyBem(object):
         self.q_ddot = np.zeros( (len(t_vec), len(wt.q)) )
         
         self.probe_t1 = np.zeros( (len(t_vec), wt.NB, len(wt.z), 3) )
-        # self.probe_t2 = np.zeros( (len(t_vec), wt.NB, len(wt.z), 3) )
-        # self.probe_t3 = np.zeros( (len(t_vec), wt.NB, len(wt.z), 3) )
         
         # initial conditions
         self.theta[0] = wt.theta
@@ -74,7 +203,8 @@ class UnsteadyBem(object):
         '''
         This method calculates the blade section lift coeficient taking into
         account the dynamic_stall. It follows the method proposed by Stig Øye.
-        []
+        [Øye S., Dynamic Stall simulated as time lag of separeation, Technical
+        University of Denmark]
         
         Parameters
         ----------
@@ -109,6 +239,36 @@ class UnsteadyBem(object):
 
     def dynamic_inflow(self, wt, wind, phi, uprime, f_P, z_3, Z_3, u_3, i_t, i_b, i_z, delta_t):
         '''
+        This method calcualtes the dynamic inflow (not corrected by the skew
+        angle) following the method proposed by Stig Øye [Hansen O. L. Hansen
+        Aerodynamics of wind turbines].
+        
+        Parameters
+        ----------
+        wt : WindTurbine object
+        wind : WindBox object
+        phi : float
+              [rad] blade section inflow angle
+        u_prime : float
+                  [m/s] |u + f_g n(n⋅w)|
+        f_P : float
+              Prandtl's tip loss corection factor
+        z_3 : float
+              blade section z coordinate projected on the rotor plane
+        Z_3 : float
+              blade tip z coordinate projected on the rotor plane
+        u_3 : numpy.ndarray[:], dtyp=float
+              [m/s] wind velocity at the blade section location described in
+              the rotor plane reference frame
+        i_t : int
+              time iteration counter
+        i_b : int
+              blade number counter
+        i_t : int
+              blade section counter
+        delta_t : float
+                  time difference between the next time iteration and the
+                  current one, i.e. self.t_vec[i_t+1]-t
         '''
     
         self.w_qs[i_t+1, i_b, i_z, 0] = - (wt.NB*self.l[i_t, i_b, i_z]*np.sin(phi))/(4.*np.pi*wind.rho*z_3*f_P*uprime)
@@ -183,8 +343,6 @@ class UnsteadyBem(object):
             
             # Rotor plane normal vector
             n_0 = np.eye(3) @ wt.A_12.T @ np.array([0., 1., 0.])
-            # u_mean = n_0 @ ( A_y0 @ np.array([0., wind.u_mean, 0.]) )
-            # u_mean = n_0 @ (A_y0 @ wind.func_wind_no_turb(A_y0.T @ np.array([0., 0., -wt.h_t]), t))
             u_mean = wind.u_mean
             
             for i_z in reversed(range(len(wt.z)-1)):
@@ -201,15 +359,13 @@ class UnsteadyBem(object):
                 # Wind velocity
                 u_0 = A_y0 @ wind.func_wind(A_y0.T @ self.r_0[i_t, i_b, i_z, :].copy(), t)
                 u_0_no_turb = A_y0 @ wind.func_wind_no_turb(A_y0.T @ self.r_0[i_t, i_b, i_z, :].copy(), t)
-                # u_0 = A_y0 @ np.array([0, wind.u_mean, 0.])
-    #            u_0 = A_yaw.T @ np.array([0, wind.u_mean * (-r_0[i_t, i_b, i_z, 2]/wt.h_t)**0.2, 0.])
                 u_2 = wt.A_02 @ u_0_no_turb
                 u_3 = wt.A_03 @ u_0
                 u_4 = wt.A_04 @ u_0
                 
                 # Wind velocity relative to the blade
                 u_rel = u_4 + wt.A_34 @ self.w[i_t, i_b, i_z, :] - self.v_4[i_t, i_b, i_z, :]
-                urel = np.linalg.norm(u_rel[:1])
+                urel = np.linalg.norm(u_rel[:2])
                 
                 # Inflow angle
                 phi = np.arctan2(u_rel[1], -u_rel[0]) # [rad]
@@ -259,7 +415,7 @@ class UnsteadyBem(object):
                 self.u_prime_3[i_t, i_b, i_z, :] = u_3.copy() + np.array([0., F_G * self.w[i_t, i_b, i_z, 1], 0.])
                 self.u_prime_2[i_t, i_b, i_z, :] = u_2.copy() + np.array([0., F_G * self.w[i_t, i_b, i_z, 1], 0.])
     
-                uprime = np.linalg.norm(self.u_prime_3[i_t, i_b, i_z, :2])
+                uprime = np.linalg.norm(self.u_prime_3[i_t, i_b, i_z, :])
                 
                 if (t!=self.t_vec[-1] and t==self.t_vec[i_t] and u_mean!=0):
                     if (dynamic_inflow_on):
@@ -283,7 +439,7 @@ class UnsteadyBem(object):
                 fg_0 = np.array([0, 0, wt.m[i_z]*wt.g])
                 self.f_gravity[i_t, i_b, i_z, :] = wt.A_04 @ fg_0
             
-            # Blade root moments
+            # Blade moment components
             
             self.M_aero[i_t, i_b, 0] = np.trapz( - self.f_aero[i_t, i_b, :, 1]*self.r_b4[i_t, i_b, :, 2] + self.f_aero[i_t, i_b, :, 2]*self.r_b4[i_t, i_b, :, 1], self.r_b4[i_t, i_b, :, 2])
             self.M_aero[i_t, i_b, 1] = np.trapz(   self.f_aero[i_t, i_b, :, 0]*self.r_b4[i_t, i_b, :, 2] - self.f_aero[i_t, i_b, :, 2]*self.r_b4[i_t, i_b, :, 0], self.r_b4[i_t, i_b, :, 2])

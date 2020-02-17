@@ -13,8 +13,43 @@ import custom_functions.custom_functions as cf
 
 class WindSimu(object):
     '''
-    '''
+    This class constructs a turbulent wind box through calling Mann's windsimu
+    turbulence generator and stores the generated turbulent fluctuations in the
+    form of attributes.
     
+    Attributes
+    ----------
+    n_dim : int
+            [-] number of spatial dimensions
+    n_vel : int
+            [-] number of velocity fluctuations components to be simulated
+    n_0 : int
+          [-] number of grid points in the flow direction
+    n_1 : int
+          [-] number of grid points in the horizontal direction
+    n_2 : int
+          [-] number of grid points in the vertical direction
+    l_0 : float
+          [m] physical length in the flow direction
+    l_1 : float
+          [m] physical length in the horizontal direction
+    l_2 : float
+          [m] physical length in the vertical direction
+    terrain : str
+              defines the spectre
+    Mann_alphaepsilon : float
+                        Mann IEC model parameter (alpha*epsilon)**(2/3)
+    Mann_L : float
+             Mann IEC model parameter L
+    Mann_gamma : float
+                 Mann IEC model parameter gamma
+    seed : int
+           [-] pseudo-random number generator seed
+    input_file : str
+                 input file that will be written and used to call the windsimu
+                 executable.
+    '''
+        
     def __init__(self):
         '''
         This init method only declares the variables as place as place holders,
@@ -141,8 +176,47 @@ class WindSimu(object):
 #%%
 
 class Mann_Turb_Box_64(object):
+    '''
+    This class constructs a turbulent wind box through calling Mann's
+    mann_turb_x64 turbulence generator, which can be downloaded at HAWC2
+    website, and stores the generated turbulent fluctuations in the form of
+    attributes.
+    
+    Attributes
+    ----------
+    prefix : str
+             prefix to be added to the files generated via the mann_turb_64
+             executable
+    Mann_L : float
+             Mann IEC model parameter L
+    Mann_alphaepsilon : float
+                        Mann IEC model parameter (alpha*epsilon)**(2/3)
+    Mann_gamma : float
+                 Mann IEC model parameter gamma
+    n_0 : int
+          [-] number of grid points in the flow direction
+    n_1 : int
+          [-] number of grid points in the horizontal direction
+    n_2 : int
+          [-] number of grid points in the vertical direction
+    delta_0 : float
+              [m] physical length between grid points in the flow direction
+    delta_1 : float
+              [m] physical length between grid points in the horizontal
+              direction
+    delta_2 : float
+              [m] physical length between grid points in the vettical direction
+    high_frequency_compensation : int
+    '''
     
     def __init__(self):
+        '''
+        This init method only declares the variables as place as place holders,
+        i.e. without declaring the type or allocating memory.The instance
+        creator(s) methods will be implemented via classmethods for allowing
+        more flexibility for different imput methods.
+        '''
+        
         self.prefix = []
         self.Mann_L = []
         self.Mann_alphaepsilon = []
@@ -156,21 +230,30 @@ class Mann_Turb_Box_64(object):
         self.high_frequency_compensation = []
     
     def simulate(self):
+        '''
+        This instance method calls the Mann's mann_turb_x64 executable. It must
+        be mentioned that this method only works for now in UnixBSD and Linux
+        operating systems and depends on wine.
+        '''
+
         sys('wine ./wind/mann_turb_x64.exe %s %0.6f %0.6f %0.6f %i %i %i %i %0.6f %0.6f %0.6f %i' %(self.prefix, self.Mann_alphaepsilon, self.Mann_L, self.Mann_gamma, self.seed, self.n_0, self.n_1, self.n_2, self.delta_0, self.delta_1, self.delta_2, self.high_frequency_compensation))
     
     def read_bin(self):
         '''
+        The instance method reads the binary file outputed by Mann's executable
+        and outputs velocity components as numpy arrays        
         
-
         Returns
         -------
-        u_0 : TYPE
-            DESCRIPTION.
-        u_1 : TYPE
-            DESCRIPTION.
-        u_2 : TYPE
-            DESCRIPTION.
-
+        u_0[:, :, :] : numpy.ndarray, dtype = 'float'
+                       wind velocity flutuation in the x direction at the
+                       [x, y, x] position
+        u_1[:, :, :] : numpy.ndarray, dtype = 'float'
+                       wind velocity flutuation in the y direction at the
+                       [x, y, x] position
+        u_2[:, :, :] : numpy.ndarray, dtype = 'float'
+                       wind velocity flutuation in the z direction at the
+                       [x, y, x] position
         '''
         # Binaray files names
         file_0 = self.prefix + '_u' + '.bin'
@@ -207,29 +290,76 @@ class WindBox(object):
     '''
     Instance variables
     ------------------
+        turbulence_generator : str or None
+                               specifies the turbulence generator to use
+                               'mann_turb_x64', 'windsimu_x32' or None 
+        ws : WindSimu class instance
+        mann : MannTurbBox64 instance
+        l_0 : float
+              [m] length of the wind box in the mean wind direction
+        l_1 : float
+              [m] length of the wind box in the lateral direction
+        l_2 : float
+              [m] length of the wind box in the vertical direction
+        n_0 : int
+              [-] number of grid points in the mean wind direction
+        n_1 : int
+              [-] number of grid points in the lateral direction
+        n_2 : int
+              [-] number of grid points in the vertical direction
         u_0[:, :, :] : ndarray, dtype = float
-                       wind velocity flutuation in the x direction at the
+                       [m/s] wind velocity flutuation in the x direction at the
                        [x, y, x] position in [m/s]
         u_1[:, :, :] : ndarray, dtype = float
-                       wind velocity flutuation in the y direction at the
+                       [m/s] wind velocity flutuation in the y direction at the
                        [x, y, x] position in [m/s]
         u_2[:, :, :] : ndarray, dtype = float
-                       wind velocity flutuation in the z direction at the
+                       [m/s] wind velocity flutuation in the z direction at the
                        [x, y, x] position in [m/s]
-        u_mean : float
-                 mean wind speed in the x direction in [m/s]
         x_0[:] : ndarray, dtype = float
                  windbox points coordinates along the x direction in [m]
         x_1[:] : ndarray, dtype = float
                  windbox points coordinates along the y direction in [m]
         x_2[:] : ndarray, dtype = float
                  windbox points coordinates along the z direction in [m]
-        rho : float
-              air density in [kg/m**3]
-        windsimu : WindSimu class instance
+        self.u0_f : scipy.interpolate.interpolate.RegularGridInterpolator
+                    [m/s] u_0 interpolated at (x_0, x_1, x_2)
+        self.u1_f : scipy.interpolate.interpolate.RegularGridInterpolator
+                    [m/s] u_1 interpolated at (x_0, x_1, x_2)
+        self.u2_f : scipy.interpolate.interpolate.RegularGridInterpolator
+                    [m/s] u_2 interpolated at (x_0, x_1, x_2)
+        self.rho : float
+                   [kg/m**3] air density
+        self.u_mean : float
+                      [m/s] mean wind speed
+                      
+        self.shear_format : string
+                            especifies the wind shear format
+                            'constant', 'power_law' or 'constant'
+        self.z_r : float
+                   [m] reference height for the wind shear equation
+        self.z_0 : float
+                   [m] roughtness length
+                   
+        self.alpha : flaot
+                     [-] power law exponent
+        self.d_0 : float
+                   [m] l_0 component related to the wind turbine dimensions
+                   allowing the same wind box to be used with any yaw angle
+        self.t_ramp : float
+                      [s] interval between 0 and  100 seconds. The wind ramp
+                      increases the wind speed gradually to avoid
+                      instabilities, however the wind turbine aerodynamics
+                      still does not work properly with the ramp.
     '''
     
     def __init__(self):
+        '''
+        This init method only declares the variables as place as place holders,
+        i.e. without declaring the type or allocating memory.The instance
+        creator(s) methods will be implemented via classmethods for allowing
+        more flexibility for different imput methods.
+        '''        
         self.turbulence_generator = []
         self.ws = WindSimu()
         self.mann = Mann_Turb_Box_64()
@@ -265,6 +395,11 @@ class WindBox(object):
     
     def get(self):
         '''
+        This method reads the turbulent wind box binary files, allocates the
+        values in the ojbect attributes u_0, u_1 and u_2. The attributes x_0,
+        x_1 and x_2 are constructed based on the wind turbine geomentry, 
+        simulation time and grid spacing. The attributes u0_f, u1_f, and u2_f
+        are created using the scipy RegularGridInterpolator funciton.
         '''
         
         l_hub = self.z_r
@@ -284,8 +419,15 @@ class WindBox(object):
         
     def export_hdf5(self, hdf5_file):
         '''
-        '''
+        This method stores the class attributes in a HDF5 file. This has the
+        intention of avoiding the need unecessary simulating wind boxes when
+        one has already been created.
 
+        Parameters
+        ----------
+        hdf5_file : str
+                    HDF5 file name
+        '''
         with h5py.File(hdf5_file, 'w') as f:
             f.create_dataset('turbulence_generator', data=self.turbulence_generator)
             #
@@ -321,6 +463,16 @@ class WindBox(object):
     
     def import_hdf5(self, hdf5_file):
         '''
+        This method reads values from an HDF5 file and initialise object
+        attributes. This has the intention of avoiding the need unecessary
+        simulating wind boxes when one has already been created. The attributes
+        u0_f, u1_f, and u2_f are created using the scipy
+        RegularGridInterpolator funciton.
+
+        Parameters
+        ----------
+        hdf5_file : str
+                    HDF5 file name
         '''
         #
         with h5py.File(hdf5_file, 'r') as f:
@@ -337,13 +489,32 @@ class WindBox(object):
     
     def func_wind_turb(self, r_i, t):
         '''
+        This method returns the wind, including the turbulent wind flctuations,
+        at a give point in the wind box. The non-turbulent component of the
+        wind are calculated using the wind shear format. The turbulent wind
+        fluctuations are calculated interpolating from the wind box usig a
+        trilinear iterpolation method.
+
+        Parameters
+        ----------
+        r_i : numpy.ndarray[:], dtype=float
+              [m] blade section positon in the wind turbine reference frame.
+        t : float
+            [s] simulation time.
+
+        Returns
+        -------
+        u_i : numpy.ndarray[:], dtype=float
+              [m/s] wind velocity in the wind turbine inertial reference frame.
         '''
         
         # Transfomation tensor from the inertial to the wind-box reference of frame
         A_iw = np.array([[0., -1., 0.], [-1., 0., 0.], [0., 0., -1.]])
         
+        # Blade section position in the wind box reference frame
         r_w = A_iw @ r_i + np.array([self.u_mean*t, 0., 0.])
         
+        # Non-turbulent wind component (wind box reference frame)
         z = (A_iw @ r_i)[2]
         if (self.shear_format == 'power_law'):
             u_x = self.u_mean * (z/self.z_r)**self.alpha
@@ -352,13 +523,16 @@ class WindBox(object):
         elif (self.shear_format == 'constant'):
             u_x = self.u_mean
         
+        # Wind velocity in the wind box reference frame
         u_w = np.zeros((3,))
         u_w[0] = self.u0_f(r_w) - u_x
         u_w[1] = self.u1_f(r_w)
         u_w[2] = self.u2_f(r_w)
         
+        # Wind velocity in the wind turbine inertial reference frame
         u_i =  A_iw.T @ u_w
         
+        # Scale the wind velocity with the ramp factor
         if (t < self.t_ramp):
             u_i = ((0.99/self.t_ramp)*t + 0.01) * u_i
         
@@ -366,10 +540,27 @@ class WindBox(object):
     
     def func_wind_no_turb(self, r_i, t):
         '''
-        '''        
+        This method returns the wind, excluding the turbulent wind flctuations,
+        at a give point in the wind box. The non-turbulent component of the
+        wind are calculated using the wind shear format.
+
+        Parameters
+        ----------
+        r_i : numpy.ndarray[:], dtype=float
+              [m] blade section positon in the wind turbine reference frame.
+        t : float
+            [s] simulation time.
+
+        Returns
+        -------
+        u_i : numpy.ndarray[:], dtype=float
+              [m/s] wind velocity in the wind turbine inertial reference frame.
+        '''
+        
         # Transfomation tensor from the inertial to the wind-box reference of frame        
         A_iw = np.array([[0., -1., 0.], [-1., 0., 0.], [0., 0., -1.]])
         
+        # Non-turbulent wind component (wind box reference frame)
         z = (A_iw @ r_i)[2]
         if (self.shear_format == 'power_law'):
             u_x = self.u_mean * (z/self.z_r)**self.alpha
@@ -377,14 +568,17 @@ class WindBox(object):
             u_x = self.u_mean * (np.log(z/self.z_0)/np.log(self.z_r/self.z_0))
         elif (self.shear_format == 'constant'):
             u_x = self.u_mean
-        
+
+        # Wind velocity in the wind box reference frame
         u_w = np.zeros((3,))
         u_w[0] = 0. - u_x
         u_w[1] = 0.
         u_w[2] = 0.
-        
+
+        # Wind velocity in the wind turbine inertial reference frame        
         u_i =  A_iw.T @ u_w
         
+        # Scale the wind velocity with the ramp factor
         if (t < self.t_ramp):
             u_i = ((0.99/self.t_ramp)*t + 0.01) * u_i
         
@@ -393,17 +587,58 @@ class WindBox(object):
     @classmethod
     def construct(cls, wt, wt_file, t_max, delta_t, u_mean, rho=1.225, turbulence_generator=None, shear_format='constant', alpha=0.2, t_ramp=0., seed=None):
         '''
-        '''
-        
+        This classmethod is an alternative constructor fof the wind_box object.
+
+        Parameters
+        ----------
+        wt : WindTurbine object
+        wt_file : str
+                  Wind turbine *.xls file
+        t_max : float
+                [s] Total simulation time.
+        delta_t : float
+                  [s] Time interval to be used to construct the turbulent wind
+                  box generation. The time interval does not need to be the
+                  same as the simulation time interval since the wind vecolity
+                  will be interpolated from the grid points.
+        u_mean : float
+                 [m/s] mean wind speed
+        rho : float, optional, default=1.225
+              [kg/m**3] air density
+        turbulence_generator : str or None, optional, default=None
+                               specifies the turbulence generator to use
+                               'mann_turb_x64', 'windsimu_x32' or None 
+
+        shear_format : str, optional, default='constant'
+                       especifies the wind shear format
+                       'constant', 'power_law' or 'constant'
+        alpha : flaot, optional, default=0.2
+                [-] power law exponent
+        t_ramp : float, optional, default=0.
+                 [s] interval between 0 and  100 seconds. The wind ramp
+                 increases the wind speed gradually to avoid instabilities,
+                 however the wind turbine aerodynamics still does not work
+                 properly with the ramp.
+        seed : int, optional, default=None
+               [-] Pseudo-random number generator seed, used to generate the
+               wind box turbulent fluctuations.
+
+        Returns
+        -------
+        obj : WindBox object
+        '''        
+
         # Create the object
         obj = cls()
-        obj.rho = rho
-        obj.u_mean = u_mean
-        obj.shear_format = shear_format
+        obj.rho = rho # [kg/m**3] air density
+        obj.u_mean = u_mean # [m/s] mean wind speed
+        obj.shear_format = shear_format # [-] wind shear format
+        # Calcualte the reference height as = hub height [m]
         obj.z_r = wt.h_t + wt.s_l * np.sin(wt.tilt)
-        obj.alpha = alpha
-        obj.t_ramp = t_ramp
-
+        obj.alpha = alpha # [-] power-law exponent
+        obj.t_ramp = t_ramp # [s] time ramp
+        
+        # Turbulence gneerator method
         if (turbulence_generator == 'mann_turb_x64'):
             obj.turbulence_generator = turbulence_generator
         elif (turbulence_generator == 'windsimu_x32'):
@@ -476,7 +711,8 @@ class WindBox(object):
             
             obj.n_1 = obj.mann.n_1
             obj.n_2 = obj.mann.n_2
-            
+        
+        
         elif (turbulence_generator == 'windsimu_x32'):
 
             # Read the wt_file
@@ -511,14 +747,21 @@ class WindBox(object):
             obj.n_1 = obj.ws.n_1
             obj.n_2 = obj.ws.n_2
         
-        
+        '''
+        Check if the turbulent fluctuations box was already generated and if it
+        corresponds to the parameters of the current simulation. If not then a
+        the turbulent box will be created using the method selected.
+        '''
         
         if (turbulence_generator == 'windsimu_x32'):
             
+            # HDF5 file
             hdf5_file = obj.ws.input_file[:-4] + '.hdf5'
 
             condition = True
+            # Check if the HDF5 file exists
             if (os.path.exists(hdf5_file)):
+                # Check if the HDF5 file parameters
                 with h5py.File(hdf5_file, 'r') as f:
                     if (f['turbulence_generator'][()] != obj.turbulence_generator): condition = False
                     if (f['n_0'][()] != obj.n_0): condition = False
@@ -536,27 +779,37 @@ class WindBox(object):
                     if (f['seed'][()] != obj.ws.seed): condition = False
             else:
                 condition = False
-
+            
             print(condition)
             if (condition):
+                # Import HDF5 parameters
                 print('Importing wimdsimu box from hdf5 file')
                 obj.import_hdf5(hdf5_file=hdf5_file)
             else:
+                # Simulate the turbulent wind box
+                #
+                # Generate the turbulent wind box input file
                 print('Write windsimu input file')
                 obj.ws.write_input()
+                # Simulate the turbulent wind box
                 print('Simulating windsimu box')
                 obj.ws.simulate()
+                # Read the simulation turbulent wind box binary files
                 print('Reading windsimu binary files')
                 obj.get()
+                # Export the turbulent wind box in an HDF5 file
                 print('Exporting windbox to hdf5 file')
                 obj.export_hdf5(hdf5_file=hdf5_file)
             
         elif (obj.turbulence_generator == 'mann_turb_x64'):
 
+            # HDF5 file
             hdf5_file = obj.mann.prefix + '.hdf5'
 
             condition = True
+            # Check if the HDF5 file exists
             if (os.path.exists(hdf5_file)):
+                # Check if the HDF5 file parameters
                 with h5py.File(hdf5_file, 'r') as f:
                     if (f['turbulence_generator'][()] != obj.turbulence_generator): condition = False
                     if (f['n_0'][()] != obj.n_0): condition = False
@@ -575,13 +828,17 @@ class WindBox(object):
             
             print(condition)
             if (condition):
+                # Import HDF5 parameters
                 print('Importing mann_turb_x64 box from hdf5 file')
                 obj.import_hdf5(hdf5_file=hdf5_file)
             else:
+                # Simulate the turbulent wind box
                 print('Simulating mann_turb_x64 box')
                 obj.mann.simulate()
+                # Read the simulation turbulent wind box binary files
                 print('Reading mann_turb_x64 binary files')
                 obj.get()
+                # Export the turbulent wind box in an HDF5 file
                 print('Exporting windbox to hdf5 file')
                 obj.export_hdf5(hdf5_file=hdf5_file)
         

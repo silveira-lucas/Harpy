@@ -374,9 +374,26 @@ class WindTurbine(WindTurbineStructural):
         The method also reads th blade natural angluar frequencies and
         initialise the corresponding insntance variables.
         
+        Files formats:
+        blade_frequencies : [:] in [rad/s], comment lines start with #
+        blade_modes : [:, :]
+                      column 0 : [m] blade section z coordinate
+                      column 1 : [-] phi_0_x
+                      column 2 : [-] phi_0_y
+                      column 3 : [-] phi_0_twist
+                      column 4 : [-] phi_1_x
+                      column 5 : [-] phi_2_y
+                      column 6 : [-] phi_3_twist
+                      ⋮
+        
         Parameters
         ----------
         blade_structural_file : str
+                                file name
+        blade_modes : str
+                      file name
+        blade_frequencies : str
+                            file name
         '''
         
         # Blade geometric properties file
