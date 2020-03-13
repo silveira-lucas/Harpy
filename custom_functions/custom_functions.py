@@ -64,17 +64,17 @@ def rgkn(ode, t, y0, dy0): # return y, dy, ddy
     
     h = np.diff(t)
     for i_t in range(len(t)-1):
-                
-        A = h[i_t]/2. * ddy[i_t]
-        b = h[i_t]/2. * (dy[i_t]+1./2.*A)
-        B = h[i_t]/2. * ode(t[i_t]+h[i_t]/2., i_t, y[i_t]+b, dy[i_t]+A)
-        C = h[i_t]/2. * ode(t[i_t]+h[i_t]/2., i_t, y[i_t]+b, dy[i_t]+B)
-        d = h[i_t] * (dy[i_t] + C)
-        D = h[i_t]/2. * ode(t[i_t+1], i_t+1, y[i_t]+d, dy[i_t]+2*C)
         
-        y[i_t+1] = y[i_t] + h[i_t] * (dy[i_t]+ 1./3.*(A+B+C))
-        dy[i_t+1] = dy[i_t] + h[i_t] * 1./3.*(A+2*B+2*C+D)
-        ddy[i_t+1] = ode(t[i_t+1], i_t+1, y[i_t+1], dy[i_t+1])
+        A = (h[i_t]/2.) * ddy[i_t, :]
+        b = (h[i_t]/2.) * (dy[i_t, :]+(1./2.)*A)
+        B = (h[i_t]/2.) * ode(t[i_t]+(h[i_t]/2.), i_t, y[i_t, :]+b, dy[i_t, :]+A)
+        C = (h[i_t]/2.) * ode(t[i_t]+(h[i_t]/2.), i_t, y[i_t, :]+b, dy[i_t, :]+B)
+        d = h[i_t] * (dy[i_t, :] + C)
+        D = (h[i_t]/2.) * ode(t[i_t+1], i_t+1, y[i_t, :]+d, dy[i_t, :]+(2*C))
+        
+        y[i_t+1, :] = y[i_t, :] + h[i_t] * (dy[i_t, :]+ (1./3.)*(A+B+C))
+        dy[i_t+1, :] = dy[i_t, :] + (1./3.)*(A+2*B+2*C+D)
+        ddy[i_t+1, :] = ode(t[i_t+1], i_t+1, y[i_t+1, :], dy[i_t+1, :])
 
     return y, dy, ddy
 
@@ -160,8 +160,9 @@ def print_comment(string, ident, max_columns=79):
             comment += ' ' + '\n' + ident + word
             line_length = len(ident) + len(word)
     return comment
-    
-def trilinear_interpolation(f, x_vec, y_vec, z_vec, x, y, z):
+
+@jit
+def interp_3d(x, y, z, x_vec, y_vec, z_vec, f):
     '''
     This method calculates the trilinear interpolation on a 3D regular and
     equaly spaced grid. The code uses the algorith bellow:
@@ -174,7 +175,7 @@ def trilinear_interpolation(f, x_vec, y_vec, z_vec, x, y, z):
     |1 x0 y0 z0 x0*y0 x0*z0 y0*z0 x0*y0*z0|   |a0|   |f(x0, y0, z0)|
     |1 x1 y0 z0 x1*y0 x1*z0 y0*z0 x1*y0*z0|   |a1|   |f(x1, y0, z0)|
     |1 x0 y1 z0 x0*y1 x0*z0 y1*z0 x0*y1*z0|   |a2|   |f(x0, y1, z0)|
-    |1 x1 y1 z0 x1*y1 x1*z0 y1*z0 x1*y1*z0| * |a3| = |f(x1, y1, z0)|
+    |1 x1 y1 z0 x1*y1 x1*z0 y1*z0 x1*y1*z0| . |a3| = |f(x1, y1, z0)|
     |1 x0 y0 z1 x0*y0 x0*z1 y0*z1 x0*y0*z1|   |a4|   |f(x0, y0, z1)|
     |1 x1 y0 z1 x1*y0 x1*z1 y0*z1 x1*y0*z1|   |a5|   |f(x1, y0, z1)|
     |1 x0 y1 z1 x0*y1 x0*z1 y1*z1 x0*y1*z1|   |a6|   |f(x0, y1, z1)|
@@ -204,6 +205,8 @@ def trilinear_interpolation(f, x_vec, y_vec, z_vec, x, y, z):
         method.
     '''
     
+    # Fiding the indices of the grid points around the given point (x, y, z)
+    # (The grid must be equaly spaced for this algorithm to work)
     ix_0 = int((len(x_vec)-1)/(x_vec[-1]-x_vec[0])*(x-x_vec[0]))
     ix_1 = int((len(x_vec)-1)/(x_vec[-1]-x_vec[0])*(x-x_vec[0])) + 1
     
@@ -222,25 +225,73 @@ def trilinear_interpolation(f, x_vec, y_vec, z_vec, x, y, z):
     z0 = z_vec[iz_0]
     z1 = z_vec[iz_1]
     
-    A = np.array([[1., x0, y0, z0, x0*y0, x0*z0, y0*z0, x0*y0*z0],
-                  [1., x1, y0, z0, x1*y0, x1*z0, y0*z0, x1*y0*z0],
-                  [1., x0, y1, z0, x0*y1, x0*z0, y1*z0, x0*y1*z0],
-                  [1., x1, y1, z0, x1*y1, x1*z0, y1*z0, x1*y1*z0],
-                  [1., x0, y0, z1, x0*y0, x0*z1, y0*z1, x0*y0*z1],
-                  [1., x1, y0, z1, x1*y0, x1*z1, y0*z1, x1*y0*z1],
-                  [1., x0, y1, z1, x0*y1, x0*z1, y1*z1, x0*y1*z1],
-                  [1., x1, y1, z1, x1*y1, x1*z1, y1*z1, x1*y1*z1]])
+    # A = np.array([[1., x0, y0, z0, x0*y0, x0*z0, y0*z0, x0*y0*z0],
+    #               [1., x1, y0, z0, x1*y0, x1*z0, y0*z0, x1*y0*z0],
+    #               [1., x0, y1, z0, x0*y1, x0*z0, y1*z0, x0*y1*z0],
+    #               [1., x1, y1, z0, x1*y1, x1*z0, y1*z0, x1*y1*z0],
+    #               [1., x0, y0, z1, x0*y0, x0*z1, y0*z1, x0*y0*z1],
+    #               [1., x1, y0, z1, x1*y0, x1*z1, y0*z1, x1*y0*z1],
+    #               [1., x0, y1, z1, x0*y1, x0*z1, y1*z1, x0*y1*z1],
+    #               [1., x1, y1, z1, x1*y1, x1*z1, y1*z1, x1*y1*z1]])
+
+    # c = np.array([f[ix_0, iy_0, iz_0],
+    #               f[ix_1, iy_0, iz_0],
+    #               f[ix_0, iy_1, iz_0],
+    #               f[ix_1, iy_1, iz_0],
+    #               f[ix_0, iy_0, iz_1],
+    #               f[ix_1, iy_0, iz_1],
+    #               f[ix_0, iy_1, iz_1],
+    #               f[ix_1, iy_1, iz_1]])
     
-    c = np.array([f[ix_0, iy_0, iz_0],
-                  f[ix_1, iy_0, iz_0],
-                  f[ix_0, iy_1, iz_0],
-                  f[ix_1, iy_1, iz_0],
-                  f[ix_0, iy_0, iz_1],
-                  f[ix_1, iy_0, iz_1],
-                  f[ix_0, iy_1, iz_1],
-                  f[ix_1, iy_1, iz_1]])
+    # a = linalg.solve(A, c)
     
-    a = linalg.solve(A, c)
+    c = np.zeros((2, 2, 2))
+    for i, i_x in enumerate((ix_0, ix_1)):
+        for j, i_y in enumerate((iy_0, iy_1)):
+            for k, i_z in enumerate((iz_0, iz_1)):
+                c[i, j, k] = f[i_x, i_y, i_z]
+
+    den = (x0-x1)*(y0-y1)*(z0-z1)
+    a = np.zeros((8,))
+    a[0] = 1./den*(- c[0,0,0]*x1*y1*z1 + c[0,0,1]*x1*y1*z0
+                    + c[0,1,0]*x1*y0*z1 - c[0,1,1]*x1*y0*z0
+                    + c[1,0,0]*x0*y1*z1 - c[1,0,1]*x0*y1*z0
+                    - c[1,1,0]*x0*y0*z1 + c[1,1,1]*x0*y0*z0)
+    
+    a[1] = 1./den*(+ c[0,0,0]*y1*z1 - c[0,0,1]*y1*z0 
+                    - c[0,1,0]*y0*z1 + c[0,1,1]*y0*z0
+                    - c[1,0,0]*y1*z1 + c[1,0,1]*y1*z0
+                    + c[1,1,0]*y0*z1 - c[1,1,1]*y0*z0)
+
+    a[2] = 1./den*(+ c[0,0,0]*x1*z1 - c[0,0,1]*x1*z0
+                    - c[0,1,0]*x1*z1 + c[0,1,1]*x1*z0
+                    - c[1,0,0]*x0*z1 + c[1,0,1]*x0*z0
+                    + c[1,1,0]*x0*z1 - c[1,1,1]*x0*z0)
+    
+    a[3] = 1./den*(+ c[0,0,0]*x1*y1 - c[0,0,1]*x1*y1
+                    - c[0,1,0]*x1*y0 + c[0,1,1]*x1*y0
+                    - c[1,0,0]*x0*y1 + c[1,0,1]*x0*y1
+                    + c[1,1,0]*x0*y0 - c[1,1,1]*x0*y0)
+    
+    a[4] = 1./den*(- c[0,0,0]*z1 + c[0,0,1]*z0
+                    + c[0,1,0]*z1 - c[0,1,1]*z0
+                    + c[1,0,0]*z1 - c[1,0,1]*z0
+                    - c[1,1,0]*z1 + c[1,1,1]*z0)
+    
+    a[5] = 1./den*(- c[0,0,0]*y1 + c[0,0,1]*y1
+                    + c[0,1,0]*y0 - c[0,1,1]*y0
+                    + c[1,0,0]*y1 - c[1,0,1]*y1
+                    - c[1,1,0]*y0 + c[1,1,1]*y0)
+    
+    a[6] = 1./den*(- c[0,0,0]*x1 + c[0,0,1]*x1
+                    + c[0,1,0]*x1 - c[0,1,1]*x1
+                    + c[1,0,0]*x0 - c[1,0,1]*x0
+                    - c[1,1,0]*x0 + c[1,1,1]*x0)
+    
+    a[7] = 1./den*(+ c[0,0,0] - c[0,0,1]
+                    - c[0,1,0] + c[0,1,1]
+                    - c[1,0,0] + c[1,0,1]
+                    + c[1,1,0] - c[1,1,1])
 
     y = a[0] + a[1]*x + a[2]*y + a[3]*z + a[4]*x*y + a[5]*x*z + a[6]*y*z + a[7]*x*y*z
     return y
@@ -306,3 +357,10 @@ def fftx(x): # return y   # recursive function
         F = omega**(j1@j2)
         y = F@x    
     return y
+
+def arg_index(x, val):
+    
+    diff = x - val
+    i = np.argmin(np.abs(diff))
+      
+    return i

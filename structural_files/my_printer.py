@@ -43,16 +43,24 @@ class MyPrinter(NumPyPrinter):
             derivative array name
         '''
         
+        # Get the derivative order
         dim = 'ot'
         for i in range(expr.derivative_count):
             dim = 'd' + dim
         
+        # Get the derivative argument name
         a = expr.args[0].name
-        j = len(a)-1
+
+        # Check if the derivative name contains '[]'
+        j = None
         for i, char in enumerate(a):
             if (char == '['):
-                j = i        
-        a = a[:j] + '_'+ dim + a[j:]        
+                j = i
+        if (j is not None):
+            a = a[:j] + '_'+ dim + a[j:]
+        else:
+            a = a[:] + '_' + dim
+
         return a
     
     def _print_Integral(self, expr):

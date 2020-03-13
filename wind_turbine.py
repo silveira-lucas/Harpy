@@ -9,6 +9,7 @@ import numpy as np
 from scipy.linalg import norm
 from scipy.optimize import fmin
 import xlrd
+from scipy.interpolate import UnivariateSpline
 
 import custom_functions.custom_functions as cf
 from wind_box import WindBox
@@ -69,7 +70,10 @@ class WindTurbine(WindTurbineStructural):
               property 0 : [rad] angle of attack
               property 1 : [-] lift coefficient
               property 2 : [-] drag coefficient
-              property 3 : [-] 
+              property 3 : [-] moment coefficient
+              property 4 : [-] Øye S. Dynamic stall f_s,st
+              property 5 : [-] Øye S. Dynamic stall C_l,inv
+              property 6 : [-] Øye S. Dynamic stall C_l,fs              
               ...
     TR : numpy.ndarray [:], dtype=float
          [%] blade thickness ratio as function of z, i.e. thickness/chord
@@ -89,10 +93,11 @@ class WindTurbine(WindTurbineStructural):
             strig describing the wind turbine
     self.m : numpy.ndarray [:], type = float
              [kg/m] mass per unit length
+    self.m_a : numpy.ndarray [:], type = float
+               [kg*m] $\int_{z}^{z_{tip}}{m*z*dz}$
     self.eta : float
                [rad] blade initial azimuth position. The variable is allowed to
                be changed by routines iterating over the blades.
-    
     m_n : float
           [kg] nacelle mass
     m_h : float
@@ -123,24 +128,14 @@ class WindTurbine(WindTurbineStructural):
            its y axis
     omega_0 : numpy.np.array [:], dtype='float'
               [rad/s] blade natural angular frequencies
-    phi_0_x : numpy.ndarray [:], float
+    phi_x : numpy.ndarray [:, :], float
               [-] blade first natural mode shape on its x axis. The mode shape
               is allowed to be projected on the pitch angle
-    phi_1_x : numpy.ndarray [:], float
-              [-] blade second natural mode shape on its x axis. The mode shape
-              is allowed to be projected on the pitch angle
-    phi_2_x : numpy.ndarray [:], float
-              [-] blade third natural mode shape on its x axis. The mode shape
-              is allowed to be projected on the pitch angle
-    phi_0_y : numpy.ndarray [:], float
+              indices: [mode, i_z]
+    phi_y : numpy.ndarray [:, :], float
               [-] blade first natural mode shape on its y axis. The mode shape
               is allowed to be projected on the pitch angle
-    phi_1_y : numpy.ndarray [:], float
-              [-] blade second natural mode shape on its y axis. The mode shape
-              is allowed to be projected on the pitch angle
-    phi_2_y : numpy.ndarray [:], float
-              [-] blade third natural mode shape on its y axis. The mode shape
-              is allowed to be projected on the pitch angle
+              indices: [mode, i_z]
     f_0_x : numpy.ndarray [:], float
             [N/m] Aerodynamic force per unit lenght along the blade 0 on its x
             direction along the blade z direction.
@@ -231,6 +226,7 @@ class WindTurbine(WindTurbineStructural):
         self.label = [] 
         
         self.m = []
+        self.m_a = []
         self.eta = []
         
         self.m_n = []
@@ -246,24 +242,12 @@ class WindTurbine(WindTurbineStructural):
         self.Gs_y = []
         self.eta = []
         
+        self.n_modes = None
         self.omega = []
-        
-        self.phi_0_x0 = []
-        self.phi_1_x0 = []
-        self.phi_2_x0 = []
-        self.phi_0_y0 = []
-        self.phi_1_y0 = []
-        self.phi_2_y0 = []
-
-        self.phi_0_x = []
-        self.phi_1_x = []
-        self.phi_2_x = []
-        self.phi_0_y = []
-        self.phi_1_y = []
-        self.phi_2_y = []
-        self.phi_0_twist = []
-        self.phi_1_twist = []
-        self.phi_2_twist = []
+        self.phi_x0 = []
+        self.phi_y0 = []
+        self.phi_x = []
+        self.phi_y = []
         
         self.f_0_x = []
         self.f_1_x = []
@@ -357,6 +341,10 @@ class WindTurbine(WindTurbineStructural):
         self.chord = np.interp(self.z, df[:, 2], df[:, 4])
         self.TR = np.interp(self.z, df[:, 2], df[:, 6])
         
+        # Differential of the blade pre-bend
+        self.x_dot = np.interp(self.z, df[:, 2], np.gradient(df[:, 0], df[:, 2]))
+        self.y_dot = np.interp(self.z, df[:, 2], np.gradient(df[:, 1], df[:, 2]))
+        
         # Blade radius
         self.r_b = np.empty((len(self.z), self.NB), dtype=float)
         self.r_b[:, 0] = self.x
@@ -400,24 +388,43 @@ class WindTurbine(WindTurbineStructural):
         df = np.loadtxt(blade_structural_file)
         self.m = np.interp(self.z, df[:, 2], df[:, 4])
         del df
-        
+
+        # $\int_{z}^{z_{tip}}{m(\zeta)*\zeta*d\zeta}$
+        self.m_a = np.zeros(self.m.shape)
+        for i_z in range(len(self.z)):
+            self.m_a[i_z] = np.trapz(self.m[i_z:]*self.z[i_z:], self.z[i_z:])
+                
         # Blade mode shapes file
         df = np.loadtxt(blade_modes)
-        self.phi_0_x0 = np.interp(self.z, df[:, 0], df[:, 1])
-        self.phi_0_y0 = np.interp(self.z, df[:, 0], df[:, 2])
-        self.phi_0_twist = np.interp(self.z, df[:, 0], df[:, 3])
-        self.phi_1_x0 = np.interp(self.z, df[:, 0], df[:, 4])
-        self.phi_1_y0 = np.interp(self.z, df[:, 0], df[:, 5])
-        self.phi_1_twist = np.interp(self.z, df[:, 0], df[:, 6])
-        self.phi_2_x0 = np.interp(self.z, df[:, 0], df[:, 7])
-        self.phi_2_y0 = np.interp(self.z, df[:, 0], df[:, 8])
-        self.phi_2_twist = np.interp(self.z, df[:, 0], df[:, 9])
+        if (self.n_m is not None):
+            n_modes = self.n_m
+        else:
+            n_modes = int((df.shape[1]-1)/3)
         
+        self.phi_x0 = np.zeros((n_modes, len(self.z)))
+        self.phi_y0 = np.zeros((n_modes, len(self.z)))
+        for i_m in range(n_modes):
+            self.phi_x0[i_m, :] = np.interp(self.z, df[:, 0], df[:, 3*i_m + 1*0 + 1])
+            self.phi_y0[i_m, :] = np.interp(self.z, df[:, 0], df[:, 3*i_m + 1*1 + 1])
+        
+        # Derivatives of mode shapes
+        self.phi_x0_dot = np.zeros((n_modes, len(self.z)))
+        self.phi_y0_dot = np.zeros((n_modes, len(self.z)))
+        self.phi_x0_ddot = np.zeros((n_modes, len(self.z)))
+        self.phi_y0_ddot = np.zeros((n_modes, len(self.z)))
+        
+        for i_m in range(n_modes):            
+            self.phi_x0_dot[i_m, :] = np.interp(self.z, df[:, 0], np.gradient(df[:, 3*i_m + 1*0 + 1], df[:, 0], edge_order=2))
+            self.phi_y0_dot[i_m, :] = np.interp(self.z, df[:, 0], np.gradient(df[:, 3*i_m + 1*1 + 1], df[:, 0], edge_order=2))
+            #
+            self.phi_x0_ddot[i_m, :] = np.interp(self.z, df[:, 0], np.gradient(np.gradient(df[:, 3*i_m + 1*0 + 1], df[:, 0], edge_order=2), df[:, 0], edge_order=2))
+            self.phi_y0_ddot[i_m, :] = np.interp(self.z, df[:, 0], np.gradient(np.gradient(df[:, 3*i_m + 1*1 + 1], df[:, 0], edge_order=2), df[:, 0], edge_order=2))        
+        #
         del df
         
         # Blade natural angular frequencies files
         df = np.loadtxt(blade_frequencies)
-        self.omega = df[0:3]
+        self.omega = df[0:n_modes]
     
     def read_tower_structural(self):
         '''
@@ -445,6 +452,13 @@ class WindTurbine(WindTurbineStructural):
         ae_files : numpy.ndarray, dtype='str'
                    array containing the names of the files containing the
                    airfoil properties
+                   property 0 : [rad] angle of attack
+                   property 1 : [-] lift coefficient
+                   property 2 : [-] drag coefficient
+                   property 3 : [-] moment coefficient
+                   property 4 : [-] Øye S. Dynamic stall f_s,st
+                   property 5 : [-] Øye S. Dynamic stall C_l,inv
+                   property 6 : [-] Øye S. Dynamic stall C_l,fs              
         TR_data : numpy.ndarray, dtype='float'
                   [%] thickness ratio of the airfoils in ae_files
         '''
@@ -536,15 +550,26 @@ class WindTurbine(WindTurbineStructural):
         
         c_pitch = np.cos(self.pitch)
         s_pitch = np.sin(self.pitch)
-        self.phi_0_x = self.phi_0_x0 * c_pitch + self.phi_0_y0 * s_pitch
-        self.phi_1_x = self.phi_1_x0 * c_pitch + self.phi_1_y0 * s_pitch
-        self.phi_2_x = self.phi_2_x0 * c_pitch + self.phi_2_y0 * s_pitch
-        self.phi_0_y = - self.phi_0_x0 * s_pitch + self.phi_0_y0 * c_pitch
-        self.phi_1_y = - self.phi_1_x0 * s_pitch + self.phi_1_y0 * c_pitch
-        self.phi_2_y = - self.phi_2_x0 * s_pitch + self.phi_2_y0 * c_pitch
+        
+        n_modes = self.phi_x0.shape[0]
+        self.phi_x = np.zeros(self.phi_x0.shape)
+        self.phi_y = np.zeros(self.phi_x0.shape)
+        self.phi_x_dot = np.zeros(self.phi_x0_dot.shape)
+        self.phi_y_dot = np.zeros(self.phi_x0_dot.shape)
+        self.phi_x_ddot = np.zeros(self.phi_x0_dot.shape)
+        self.phi_y_ddot = np.zeros(self.phi_x0_dot.shape)
+        for i_m in range(n_modes):
+            self.phi_x[i_m, :] = self.phi_x0[i_m, :] * c_pitch + self.phi_y0[i_m, :] * s_pitch
+            self.phi_y[i_m, :] = - self.phi_x0[i_m, :] * s_pitch + self.phi_y0[i_m, :] * c_pitch
+            # 
+            self.phi_x_dot[i_m, :] = self.phi_x0_dot[i_m, :] * c_pitch + self.phi_y0_dot[i_m, :] * s_pitch
+            self.phi_y_dot[i_m, :] = - self.phi_x0_dot[i_m, :] * s_pitch + self.phi_y0_dot[i_m, :] * c_pitch
+            # 
+            self.phi_x_ddot[i_m, :] = self.phi_x0_ddot[i_m, :] * c_pitch + self.phi_y0_ddot[i_m, :] * s_pitch
+            self.phi_y_ddot[i_m, :] = - self.phi_x0_ddot[i_m, :] * s_pitch + self.phi_y0_ddot[i_m, :] * c_pitch            
     
     @classmethod
-    def construct(cls, wt_file=None):
+    def construct(cls, wt_file=None, n_modes=None):
         '''
         The class method is an alternative constructor method. It reads the
         xls sheets and creates and WindTurbine instance based on the
@@ -558,7 +583,9 @@ class WindTurbine(WindTurbineStructural):
                   The wt_file sheets are read in the format of dictionaries,
                   i.e. sheet and rows order do not matter, only their
                   corresponding names.
-        
+        n_modes : int, optional
+                  number of modes shapes per blade
+
         Retunrs
         -------
         obj : WindTurbine instance
@@ -568,6 +595,7 @@ class WindTurbine(WindTurbineStructural):
         
         # Create class object
         obj = cls()
+        obj.n_m = n_modes
         
         # Check for input file
         if (wt_file is None):

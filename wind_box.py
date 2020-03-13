@@ -117,13 +117,14 @@ class WindSimu(object):
         operating_system = platform.system()
         
         if (operating_system == 'Linux'):
-            sys('wine ./wind/windsimu.exe' + input_file)
+            if (os.path.exists('./wind/windsimu')):
+                sys('./wind/windsimu ' + input_file)
+            else:
+                sys('wine ./wind/windsimu.exe' + input_file)
         elif (operating_system == 'Darwin'):
             sys('wine ./wind/windsimu.exe ' + input_file)
         elif (operating_system == 'Windows'):
             sys('.\wind\windsimu.exe ' + input_file)
-        
-        # sys('wine wind/windsimu.exe ' + input_file)
     
     def read_bin(self):
         '''
@@ -525,9 +526,13 @@ class WindBox(object):
         
         # Wind velocity in the wind box reference frame
         u_w = np.zeros((3,))
-        u_w[0] = self.u0_f(r_w) - u_x
-        u_w[1] = self.u1_f(r_w)
-        u_w[2] = self.u2_f(r_w)
+        u_w[0] = cf.interp_3d(r_w[0], r_w[1], r_w[2], self.x_0, self.x_1, self.x_2, self.u_0) - u_x
+        u_w[1] = cf.interp_3d(r_w[0], r_w[1], r_w[2], self.x_0, self.x_1, self.x_2, self.u_1)
+        u_w[2] = cf.interp_3d(r_w[0], r_w[1], r_w[2], self.x_0, self.x_1, self.x_2, self.u_2)
+        
+        # u_w[0] = self.u0_f(r_w) - u_x
+        # u_w[1] = self.u1_f(r_w)
+        # u_w[2] = self.u2_f(r_w)
         
         # Wind velocity in the wind turbine inertial reference frame
         u_i =  A_iw.T @ u_w

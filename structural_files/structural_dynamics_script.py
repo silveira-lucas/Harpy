@@ -4,7 +4,7 @@ import sys
 import sympy as sym
 from sympy.physics.mechanics import dynamicsymbols, init_vprinting
 import time
-import psutil 
+# import psutil 
 
 from my_printer import MyPrinter
 from joblib import Parallel, delayed
@@ -16,12 +16,16 @@ t_start = time.time()
 
 #%%
 
+# Number of mode shapes per blade
+n_m = 4
+
 # Create or erase log file used by the parallelized functins
 file_log = open('file_log.txt', 'wt')
 file_log.close()
 
 # Number of physical cores available for parallelisation
-n_cores = psutil.cpu_count(logical = False)
+# n_cores = psutil.cpu_count(logical = False)
+n_cores = multiprocessing.cpu_count()
 
 # Parallel function verbose option
 par_verbose = 51
@@ -393,7 +397,7 @@ def func_subs_integral(var, i, j, dz, z, R):
     
     t_1 = time.time()
     #--
-    var = (var.coeff(dz).integrate((z,0,R)) + var.coeff(dz,n=0)).expand().doit()
+    var = (var.coeff(dz).integrate((z,0,R), manual=True) + var.coeff(dz,n=0)).expand().doit()
     #--
     t_2 = time.time()
     with open('file_log.txt', 'a') as file_log:
@@ -460,6 +464,7 @@ def lhs_print(lhs_str, rhs):
     
     display(sym.relational.Eq(lhs, rhs, evaluate=False))
 
+
 #%% Symbolic constants
 '''
 The symbolic constants must be explicitly declared so that python nows their
@@ -490,7 +495,7 @@ Gt_z = sym.symbols('Gt_z') # [N*m/rad] tower top equivalent angular stiffness ar
 Gt_xy = sym.symbols('Gt_xy')
 Gs_y = sym.symbols('Gs_y') # [N*m] shaft angular stiffness around y axis (local frame)
 
-omega = sym.Matrix(sym.symbols('omega_0:3')) # blade natural frequencies
+omega = sym.Matrix(sym.symbols('omega_0:%i'%(n_m))) # blade natural frequencies
 
 tilt = sym.symbols('theta_tilt') # [rad] shaft tilt angle
 cone = sym.symbols('theta_cone') # [rad] blades cone angle
@@ -505,7 +510,7 @@ the Ipython console and for code generation. The dict_names gather the list of
 variables where the names are changed before generating the numrical code.
 '''
 
-dict_names = {omega[i]: 'omega[%i]' %i for i in range(3)}
+dict_names = {omega[i]: 'omega[%i]' %i for i in range(n_m)}
 dict_names = {**dict_names, tilt: 'tilt', cone: 'cone', pitch: 'pitch'}
 
 #%% Funtions of z
@@ -520,13 +525,14 @@ y = sym.Function('y')(z) # [m] blade section centre y coordinate (local frame)
 
 # Blade section mass per unit of lenght [kg/m]
 m = sym.Function('m')(z)
+m_a = sym.Function('m_a')(z)
 
 # Blade mode shapes
-phi_x = sym.zeros(3,1)  # matrix of mode shapes in the x direction [phi_0_x, phi_1_x, phi_2_x].T [m]
-phi_y = sym.zeros(3,1)  # matrix of mode shapes in the x direction [phi_0_y, phi_1_y, phi_2_y].T [m]
+phi_x = sym.zeros(n_m,1)  # matrix of mode shapes in the x direction [phi_0_x, phi_1_x, phi_2_x].T [m]
+phi_y = sym.zeros(n_m,1)  # matrix of mode shapes in the x direction [phi_0_y, phi_1_y, phi_2_y].T [m]
 for i in range(phi_x.shape[0]):
-    phi_x[i] = sym.Function(('phi_%s_x' %str(i)))(z)
-    phi_y[i] = sym.Function(('phi_%s_y' %str(i)))(z)
+    phi_x[i] = sym.Function(('phi_x[%s,:]' %str(i)))(z)
+    phi_y[i] = sym.Function(('phi_y[%s,:]' %str(i)))(z)
 
 # Aerodynamic forces per unit length (generic blade)
 f_x_b = sym.Function('f_b_x')(z) # force per unit length on x direction (for a generic blade) [N/m]
@@ -561,12 +567,12 @@ second derivatives.
 t = sym.symbols('t') # time [s]
 
 # Degrees of freedom
-q = sym.Matrix(dynamicsymbols('q[0:14]')) # matrix of degrees of freedom [q_0, q_1, q_2, ..., q_11].T
+q = sym.Matrix(dynamicsymbols('q[0:%i]'%(3*n_m+5))) # matrix of degrees of freedom [q_0, q_1, q_2, ..., q_11].T
 q_dot = q.diff(t)                        # (d/dt) [q_0, q_1, q_2, ..., q_11].T
 q_ddot = q_dot.diff(t)                   # (d**2/dt**2) [q_0, q_1, q_2, ..., q_11].T
 
 # Degrees of freedom (generic blade)
-qb = sym.Matrix(dynamicsymbols('qb_0:3')) # matrix of blade degrees of freedom (for a generic blade) [qb_0, qb_1, qb_2].T
+qb = sym.Matrix(dynamicsymbols('qb_0:%i'%(n_m))) # matrix of blade degrees of freedom (for a generic blade) [qb_0, qb_1, qb_2].T
 qb_dot = qb.diff(t)                       # (d/dt) [qb_0, qb_1, qb_2].T
 qb_ddot = qb_dot.diff(t)                  # (d**2/dt**2) [qb_0, qb_1, qb_2].T
 
@@ -581,14 +587,14 @@ Omega_dot = Omega.diff(t)       # (d**2/dt**2) Omega [rad/s**2]
 Omega_ddot = Omega_dot.diff(t)
 
 # Update the names dictionary
-dict_names = {**dict_names, **{qb[j]: 'q[3*i_b+%i]' %j for j in range(3)}}
+dict_names = {**dict_names, **{qb[j]: 'q[%i*i_b+%i]' %(n_m,j) for j in range(n_m)}}
 
 #%% Dictionaries
 
 # Generic blade to blade 0, 1 and 2 respectively
-dict_b0 = { eta: pi,                   **dict(zip(qb[0:3],q[0:3])), **dict(zip(f_b[:], f_0[:])) }
-dict_b1 = { eta: sym.Rational(5,3)*pi, **dict(zip(qb[0:3],q[3:6])), **dict(zip(f_b[:], f_1[:])) }
-dict_b2 = { eta: sym.Rational(7,3)*pi, **dict(zip(qb[0:3],q[6:9])), **dict(zip(f_b[:], f_2[:])) }
+dict_b0 = { eta: pi,                   **dict(zip(qb[0:n_m],q[0:n_m])), **dict(zip(f_b[:], f_0[:])) }
+dict_b1 = { eta: sym.Rational(5,3)*pi, **dict(zip(qb[0:n_m],q[n_m:2*n_m])), **dict(zip(f_b[:], f_1[:])) }
+dict_b2 = { eta: sym.Rational(7,3)*pi, **dict(zip(qb[0:n_m],q[2*n_m:3*n_m])), **dict(zip(f_b[:], f_2[:])) }
 
 # List of variables that vary with iterations
 iter_list = list(f_0[:2] + f_1[:2] + f_2[:2] + q[:] +
@@ -619,24 +625,25 @@ for i in range(len(phi_x)):
 
 #%% Assumptions
 
-#tilt = 0
-#cone = 0
-#g = 0
+# tilt = 0
+# cone = 0
+# g = 0
 
-ut_x = q[9]
-ut_y = q[10]
-theta_tz = q[11]
-theta_sy = q[12]
+# ut_x = q[3*n_m]
+ut_y = q[3*n_m+0]
+# theta_tz = q[3*n_m+2]
+# theta_sy = q[3*n_m+3]
 
+# theta_tx = 0
+# q[-1] = 0
 
-# theta_tx = q[11]
+# ut_x, ut_y, 
+ut_x, theta_tx, theta_tz, theta_sy = [0 for i in range(4)]
+for i in range(4):
+    q[-(i+1)] = 0
+    q_dot[-(i+1)] = 0
+    q_ddot[-(i+1)] = 0
 
-theta_tx, q[13], q_dot[13], q_ddot[13] = [0 for i in range(4)]
-
-# theta_tx, theta_tz, theta_sy = [0 for i in range(3)]
-# q[11], q[12], q[13] = [0 for i in range(3)]
-# q_dot[11], q_dot[12], q_dot[13] = [0 for i in range(3)]
-# q_ddot[11], q_ddot[12], q_ddot[13] = [0 for i in range(3)]
 
 #%% Transformation tensors
 
@@ -669,7 +676,7 @@ Omega_01_1 = matrix_simplify( A_01 * A_01.T.diff(t) )
 Omega_01_3 = matrix_simplify( A_23*A_12 * Omega_01_1 * A_12.T*A_23.T )
 Omega_01_4 = matrix_simplify( A_34*A_23*A_12 * Omega_01_1 * A_12.T*A_23.T*A_34.T )
 
-Omega_23_3 = matrix_simplify( A_23 * A_23.T.diff(t) ) # ?_23_3, ie ?_23_3 in tnesor form
+Omega_23_3 = matrix_simplify( A_23 * A_23.T.diff(t) )
 Omega_23_4 = matrix_simplify( A_34 * Omega_23_3 * A_34.T )
 
 print('Omega_01_1 ='); display(Omega_01_1); print('\n')
@@ -691,7 +698,7 @@ r_t = sym.Matrix([ ut_x, ut_y, -h_t])
 r_s = sym.Matrix([ 0, -s_l, 0])
 
 # Blade section position (frame 5)
-r_b = sym.Matrix([qb[0:3,0].T*phi_x, qb[0:3,0].T*phi_y, [z]]) + sym.Matrix([x, y, 0])
+r_b = sym.Matrix([qb[0:n_m,0].T*phi_x, qb[0:n_m,0].T*phi_y, [z]]) + sym.Matrix([x, y, 0])
 
 print('r_t = '); display(r_t); print('\n')
 print('r_s = '); display(r_s); print('\n')
@@ -757,12 +764,15 @@ E_pot_T = sym.Rational(1, 2)*( k_x*ut_x**2 + k_y*ut_y**2 + Gt_x*theta_tx**2 + Gt
 
 # Blade stiffness potential energy (generic blade)
 E_pot_m = 0
-for i in range(3):
+for i in range(n_m):
     E_pot_m += sym.Rational(1, 2)*(omega[i]**2*m*((phi_x[i]**2+phi_y[i]**2)*dz)*qb[i]**2)
+
+# Centrifugal stiffening of the blade (generic blade)
+E_pot_c = sym.Rational(1, 2)* Omega**2 * sym.cos(cone)**2 * m_a * (sym.Matrix(r_b.diff(z)[:2]).T * sym.Matrix(r_b.diff(z)[:2]))[0] * dz
 
 # Blades gravitational potential energy  (generic blade)
 E_pot_g = (m * g * (-r_0[2]) * dz)
-E_pot_b = E_pot_m + E_pot_g
+E_pot_b = E_pot_m + E_pot_g # + E_pot_c
 del E_pot_m, E_pot_g
 
 # Blades potential energy (blades 0, 1 and 2)
@@ -843,12 +853,12 @@ del totos
 
 #%% Assmptions (small deflectons and small deflections derivatives)
 
-t_1 = time.time()
-Ec = assumptions_madd(E, dict_small, dict_small_squared)
-t_2 = time.time()
-print(t_2-t_1)
+# t_1 = time.time()
+# Ec = assumptions_madd(E, dict_small, dict_small_squared)
+# t_2 = time.time()
+# print(t_2-t_1)
 
-# Ec = E.copy()
+Ec = E.copy()
 
 #%% Matrices
 
