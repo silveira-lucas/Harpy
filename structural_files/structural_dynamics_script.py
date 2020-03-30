@@ -4,7 +4,7 @@ import sys
 import sympy as sym
 from sympy.physics.mechanics import dynamicsymbols, init_vprinting
 import time
-# import psutil 
+import psutil 
 
 from my_printer import MyPrinter
 from joblib import Parallel, delayed
@@ -24,8 +24,8 @@ file_log = open('file_log.txt', 'wt')
 file_log.close()
 
 # Number of physical cores available for parallelisation
-# n_cores = psutil.cpu_count(logical = False)
-n_cores = multiprocessing.cpu_count()
+n_cores = psutil.cpu_count(logical = False)
+# n_cores = multiprocessing.cpu_count()
 
 # Parallel function verbose option
 par_verbose = 51
@@ -637,7 +637,6 @@ ut_y = q[3*n_m+0]
 # theta_tx = 0
 # q[-1] = 0
 
-# ut_x, ut_y, 
 ut_x, theta_tx, theta_tz, theta_sy = [0 for i in range(4)]
 for i in range(4):
     q[-(i+1)] = 0
